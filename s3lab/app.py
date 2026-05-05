@@ -31,7 +31,6 @@ def draw_overlay(
     text = (
         f"UI {ui_fps:5.1f} Hz | "
         f"render {renderer.last_render_fps:5.2f} fps | "
-        f"row {renderer.next_row:03d}/{renderer.height} | "
         f"frame {renderer.completed_frames}"
     )
 
@@ -41,24 +40,15 @@ def draw_overlay(
     screen.blit(shadow, (x + 1, y + 19))
     screen.blit(label, (x, y + 18))
 
-    marker_y = int((renderer.next_row / renderer.height) * screen.get_height())
-    pygame.draw.line(
-        screen,
-        (255, 255, 255),
-        (0, marker_y),
-        (screen.get_width(), marker_y),
-        1,
-    )
-
 
 def run() -> None:
     pygame.init()
     pygame.font.init()
 
-    render_width = 96
-    render_height = 54
+    render_width = 160
+    render_height = 90
 
-    scale = 10
+    scale = 6
     window_width = render_width * scale
     window_height = render_height * scale
 

@@ -1,2 +1,5 @@
 numpy>=1.26
 pygame>=2.5
+
+[dev]
+pytest>=8

@@ -37,9 +37,9 @@ def apply_keyboard_input(camera: Camera, dt: float) -> bool:
     if keys[pygame.K_a]:
         local_velocity[1] -= move_speed
 
-    if keys[pygame.K_e]:
+    if keys[pygame.K_SPACE]:
         local_velocity[2] += move_speed
-    if keys[pygame.K_q]:
+    if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
         local_velocity[2] -= move_speed
 
     if keys[pygame.K_LEFT]:
@@ -52,9 +52,9 @@ def apply_keyboard_input(camera: Camera, dt: float) -> bool:
     if keys[pygame.K_DOWN]:
         camera.pitch(-turn_speed * dt)
 
-    if keys[pygame.K_z]:
+    if keys[pygame.K_q]:
         camera.roll(-turn_speed * dt)
-    if keys[pygame.K_x]:
+    if keys[pygame.K_e]:
         camera.roll(turn_speed * dt)
 
     camera.move_local(local_velocity, dt)

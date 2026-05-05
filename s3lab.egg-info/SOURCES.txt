@@ -1,3 +1,5 @@
+LICENSE
+README.md
 pyproject.toml
 s3lab/__init__.py
 s3lab/app.py
@@ -15,3 +17,4 @@ s3lab/input/__init__.py
 s3lab/input/pygame_input.py
 s3lab/render/__init__.py
 s3lab/render/raycast.py
+tests/test_s3_invariants.py

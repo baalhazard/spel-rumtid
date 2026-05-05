@@ -2,5 +2,9 @@ Metadata-Version: 2.4
 Name: s3lab
 Version: 0.1.0
 Requires-Python: >=3.10
+License-File: LICENSE
 Requires-Dist: numpy>=1.26
 Requires-Dist: pygame>=2.5
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Dynamic: license-file

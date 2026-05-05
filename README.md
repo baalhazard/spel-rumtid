@@ -11,7 +11,7 @@ Det här är inte tänkt som en vanlig spelmotor. Fokus i nuläget är att håll
 - S³-geometri i 4D med normalisering, tangentprojektion och geodesier.
 - Kamerarörelse i lokal tangentbas med parallelltransporterad orientering.
 - Analytisk ray-casting mot geodesiska sfärer.
-- Progressiv renderer med overlay som visar UI-Hz, render-fps, aktuell rad och frame-counter.
+- Progressiv renderer med overlay som visar UI-Hz, render-fps och frame-counter.
 - Vektoriserad radblocksrendering med NumPy för mycket bättre prestanda än den första pixel-för-pixel-prototypen.
 - En liten testsvit för S³-invarianter och jämförelse mellan scalar och vektoriserad rendering.
 
@@ -42,10 +42,11 @@ python -m s3lab.app
 ```text
 W/S      framåt/bakåt
 A/D      höger/vänster
-Q/E      ned/upp
+Space    upp
+Shift    ned
 ←/→      yaw
 ↑/↓      pitch
-Z/X      roll
+Q/E      roll
 Esc      avsluta
 ```
 
