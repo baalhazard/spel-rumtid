@@ -159,6 +159,153 @@ def render(
     return image
 
 
+def make_ray_directions_block(
+    camera: Camera,
+    width: int,
+    height: int,
+    fov_y: float,
+    y0: int,
+    y1: int,
+) -> np.ndarray:
+    """
+    Returns unit tangent ray directions for rows [y0, y1).
+
+    Shape: (rows, width, 4)
+    """
+    aspect = width / height
+    half_height = math.tan(0.5 * fov_y)
+    half_width = aspect * half_height
+
+    xs = np.arange(width, dtype=float) + 0.5
+    ys = np.arange(y0, y1, dtype=float) + 0.5
+
+    ndc_x = 2.0 * (xs / width) - 1.0
+    ndc_y = 1.0 - 2.0 * (ys / height)
+
+    local_right = (ndc_x * half_width)[None, :, None]
+    local_up = (ndc_y * half_height)[:, None, None]
+
+    p = camera.position[None, None, :]
+    f = camera.forward[None, None, :]
+    r = camera.right[None, None, :]
+    u = camera.up[None, None, :]
+
+    dirs = f + local_right * r + local_up * u
+
+    tangent_error = np.sum(dirs * p, axis=-1, keepdims=True)
+    dirs = dirs - tangent_error * p
+
+    lengths = np.linalg.norm(dirs, axis=-1, keepdims=True)
+    return dirs / np.maximum(lengths, s3.EPS)
+
+
+def render_rows_vectorized(
+    camera: Camera,
+    scene: Scene,
+    width: int,
+    height: int,
+    fov_y: float,
+    y0: int,
+    y1: int,
+    t_min: float = 1e-4,
+    t_max: float = 2.0 * math.pi,
+) -> np.ndarray:
+    """
+    Vectorized geodesic ray-casting for a block of rows.
+
+    The geometry matches render_pixel(), but the per-pixel Python loops are
+    replaced with NumPy operations over the whole row block.
+    """
+    dirs = make_ray_directions_block(camera, width, height, fov_y, y0, y1)
+
+    rows = y1 - y0
+    p = camera.position
+
+    best_t = np.full((rows, width), np.inf, dtype=float)
+    best_color = np.zeros((rows, width, 3), dtype=float)
+    best_center = np.zeros((rows, width, 4), dtype=float)
+
+    for sphere in scene.spheres:
+        c = sphere.center
+        rhs = math.cos(sphere.radius)
+
+        a = float(np.dot(p, c))
+        b = np.tensordot(dirs, c, axes=([-1], [0]))
+
+        amplitude = np.sqrt(a * a + b * b)
+        valid = amplitude > s3.EPS
+
+        quotient = np.zeros_like(amplitude)
+        quotient[valid] = rhs / amplitude[valid]
+
+        valid = valid & (quotient >= -1.0) & (quotient <= 1.0)
+        if not np.any(valid):
+            continue
+
+        quotient_clamped = np.clip(quotient, -1.0, 1.0)
+        phase = np.arctan2(b, a)
+        delta = np.arccos(quotient_clamped)
+
+        for base in (phase + delta, phase - delta):
+            for k in range(-2, 4):
+                t = base + 2.0 * math.pi * k
+                mask = valid & (t >= t_min) & (t <= t_max) & (t < best_t)
+                if not np.any(mask):
+                    continue
+
+                best_t[mask] = t[mask]
+                best_color[mask] = sphere.color
+                best_center[mask] = c
+
+    w = 0.5 + 0.5 * dirs[:, :, 3]
+    bg0 = np.array([0.02, 0.025, 0.04])
+    bg1 = np.array([0.08, 0.10, 0.16])
+    image = (
+        bg0[None, None, :] * (1.0 - w[:, :, None])
+        + bg1[None, None, :] * w[:, :, None]
+    )
+
+    hit_mask = np.isfinite(best_t)
+
+    if np.any(hit_mask):
+        t = best_t[hit_mask]
+        d = dirs[hit_mask]
+        c = best_center[hit_mask]
+        base_color = best_color[hit_mask]
+
+        cos_t = np.cos(t)[:, None]
+        sin_t = np.sin(t)[:, None]
+
+        point = cos_t * p[None, :] + sin_t * d
+        point = point / np.maximum(np.linalg.norm(point, axis=1, keepdims=True), s3.EPS)
+
+        inward = c - np.sum(c * point, axis=1, keepdims=True) * point
+        inward_len = np.linalg.norm(inward, axis=1, keepdims=True)
+        valid_normal = inward_len[:, 0] >= s3.EPS
+
+        shaded = np.zeros_like(base_color)
+        if np.any(valid_normal):
+            normal = -inward[valid_normal] / inward_len[valid_normal]
+
+            ray_dir_at_hit = (
+                -sin_t[valid_normal] * p[None, :]
+                + cos_t[valid_normal] * d[valid_normal]
+            )
+            ray_dir_at_hit = ray_dir_at_hit / np.maximum(
+                np.linalg.norm(ray_dir_at_hit, axis=1, keepdims=True),
+                s3.EPS,
+            )
+
+            view_factor = np.maximum(0.0, np.sum(normal * (-ray_dir_at_hit), axis=1))
+            shaded[valid_normal] = (
+                base_color[valid_normal] * (0.20 + 0.80 * view_factor)[:, None]
+            )
+
+        image[hit_mask] = np.clip(shaded, 0.0, 1.0)
+
+    return np.asarray(np.clip(255.0 * image, 0.0, 255.0), dtype=np.uint8)
+
+
 class ProgressiveRenderer:
     """
     Incremental geodesic ray-caster.
@@ -194,9 +341,14 @@ class ProgressiveRenderer:
     def progress(self) -> float:
         return self.next_row / self.height
 
-    def step(self, scene: Scene, time_budget_seconds: float = 0.025) -> bool:
+    def step(
+        self,
+        scene: Scene,
+        time_budget_seconds: float = 0.025,
+        block_rows: int = 4,
+    ) -> bool:
         """
-        Renders rows until the time budget is consumed.
+        Renders row blocks until the time budget is consumed.
 
         Returns True when a complete image has just been finished.
         """
@@ -204,27 +356,26 @@ class ProgressiveRenderer:
             raise RuntimeError("ProgressiveRenderer.start_frame(camera) must be called first.")
 
         start = time.perf_counter()
-        rows_done = 0
+        block_rows = max(1, block_rows)
 
         while self.next_row < self.height:
-            y = self.next_row
+            y0 = self.next_row
+            y1 = min(self.height, y0 + block_rows)
 
-            for x in range(self.width):
-                self.image[y, x] = render_pixel(
-                    self.camera_snapshot,
-                    scene,
-                    self.width,
-                    self.height,
-                    self.fov_y,
-                    x,
-                    y,
-                )
+            self.image[y0:y1, :, :] = render_rows_vectorized(
+                self.camera_snapshot,
+                scene,
+                self.width,
+                self.height,
+                self.fov_y,
+                y0,
+                y1,
+            )
 
-            self.next_row += 1
-            rows_done += 1
+            self.next_row = y1
 
             elapsed = time.perf_counter() - start
-            if rows_done >= 1 and elapsed >= time_budget_seconds:
+            if elapsed >= time_budget_seconds:
                 break
 
         if self.next_row >= self.height:
