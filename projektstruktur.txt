@@ -1,0 +1,23 @@
+s3lab/
+  pyproject.toml
+  s3lab/
+    __init__.py
+
+    geometry/
+      __init__.py
+      s3.py              # S³: normalisering, tangentprojektion, geodesier
+
+    core/
+      __init__.py
+      camera.py          # kameratillstånd och lokala rotationer
+      scene.py           # geodesiska objekt
+
+    render/
+      __init__.py
+      raycast.py         # geodesisk ray-casting
+
+    input/
+      __init__.py
+      pygame_input.py    # tangentlokal input, inget geometriansvar
+
+    app.py               # lågupplöst pygame-prototyp
